@@ -79,49 +79,61 @@ of client and server negotiates the same handshake:
 
 | `BENCH_CLIENT` | Client | Summary's `Client` |
 | --- | --- | --- |
-| `benchcli-rustls` (default) | Rust, rustls on tokio (tokio-rustls, aws-lc-rs); needs cargo 1.85+, which the rustls server needs too | `rust-rustls` |
+| `benchcli-usockets` (default) | C++, on [uSockets](https://github.com/uNetworking/uSockets) event loops - one per CPU, each owning its share of the connections - and BoringSSL; builds from the sources the usockets server builds from | `c-usockets` |
+| `benchcli-rustls` | Rust, rustls on tokio (tokio-rustls, aws-lc-rs); needs cargo 1.85+ | `rust-rustls` |
 | `benchcli-go` | Go, crypto/tls, a goroutine per connection | `go-crypto/tls` |
 
 ```sh
 BENCH_CLIENT=benchcli-go bash script/benchmark.sh
 ```
 
-Both take the same flags, run the same three phases the same way and write
-the same JSON report files, which the report step - the Go client either way -
-turns into the tables. rustls does not implement TLS 1.1, so under
-`benchcli-rustls` the `*-tls11` frameworks are measured by `benchcli-go`
-(`script/client.sh` picks it), and the Summary's `Client` row says which
-client measured which rows.
+All three take the same flags, run the same three phases the same way and
+write the same JSON report files, which the report step - the Go client
+whichever measured - turns into the tables. rustls does not implement TLS
+1.1, so under `benchcli-rustls` the `*-tls11` frameworks are measured by
+`benchcli-go` (`script/client.sh` picks it), and the Summary's `Client` row
+says which client measured which rows; the other two measure every framework.
 
-Neither client keeps a session cache, so every handshake is a full one, and
-neither verifies the server's certificate chain - the benchmark measures the
-servers' side of the handshake, and a client checking a chain on the machine
-it shares with the server would only take CPU from it - while both still
-verify the handshake's signature with the certificate's key.
+None of them keeps a session cache, so every handshake is a full one, and none
+verifies the server's certificate chain - the benchmark measures the servers'
+side of the handshake, and a client checking a chain on the machine it shares
+with the server would only take CPU from it - while all three still verify
+the handshake's signature with the certificate's key. They offer the same
+handshake: the one TLS version the framework is pinned to, `X25519MLKEM768`
+then `X25519`, AES-128-GCM first.
 
-### Why benchcli-rustls is the default
+`benchcli-usockets` runs uSockets' sockets as plain TCP and drives BoringSSL
+through memory BIOs itself, rather than through uSockets' own TLS layer: that
+one starts a client's handshake only when the application first writes, and
+says nothing when it completes, which is the moment Connections times.
 
-A client is only as good as how little it holds the server back. Both were
-run against every TLS 1.2 and 1.3 framework, with the defaults (10,000
-connections, 1KB messages), in the Docker runner on an Apple M4 Pro; the
-ratio is benchcli-rustls's TPS over benchcli-go's:
+### Why benchcli-usockets is the default
 
-| Phase | Server 3 CPUs, client 4 (the runner's split) | Server 4 CPUs, client 2 (client-bound) |
-| --- | --- | --- |
-| Connections | 0.99 - 1.78 | 1.40 - 1.80 |
-| BenchEcho | 0.91 - 1.20 | 1.24 - 1.54 |
-| BenchPipeline | 0.95 - 1.02 | 0.62 - 0.79 |
+A client is only as good as how little it holds the server back. All three
+were run against every TLS 1.2 and 1.3 framework (the ones all three can
+speak), with the defaults (10,000 connections, 1KB messages), in the Docker
+runner on an Apple M4 Pro. For each of the 24 rows - 8 frameworks, 3 phases -
+the client that got the most out of the server is the best, and each client
+is scored by its share of the best, averaged geometrically, and by how many
+rows it is within 1% of the best on:
 
-With the client given fewer CPUs than the server, so that it is the
-bottleneck, benchcli-rustls completes up to 1.8 times the handshakes and 1.5
-times the round trips; with the runner's own split, benchcli-go is the
-bottleneck on handshakes against rustls, which read 44% lower through it
-(13,522 against 24,070 a second at TLS 1.3). benchcli-go generates more of
-BenchPipeline's traffic on a starved client - a tokio task per writer and per
-connection costs more there than a goroutine does - but with the runner's
-split both reach what the servers answer, within 5% at fib's 2,000,000 cap.
-The cryptography is not the difference: aws-lc-rs's AES-128-GCM seals within
-10% of crypto/tls's on the same machine.
+| | benchcli-go | benchcli-rustls | benchcli-usockets |
+| --- | --- | --- | --- |
+| Server 3 CPUs, client 4 (the runner's split): share of the best | 85% | 97% | 96% |
+| rows within 1% of the best | 3 | 11 | 14 |
+| Server 4 CPUs, client 2 (client-bound): share of the best | 75% | 88% | 94% |
+| rows within 1% of the best | 6 | 10 | 10 |
+
+Given fewer CPUs than the server, so that the client is the bottleneck and
+what is measured is the client, benchcli-usockets is clearly ahead; with the
+runner's own split it and benchcli-rustls are within a point of each other,
+and benchcli-usockets is the best on more rows - it is the only one that takes
+every framework's BenchPipeline to the 2,000,000 cap wherever the server can
+reach it. benchcli-rustls completes the most handshakes when starved of CPUs
+and the most echo round trips against the Go servers; benchcli-go generates
+the most BenchPipeline traffic when starved, and holds the servers back most
+everywhere else. That, and measuring TLS 1.1 without falling back to another
+client, makes benchcli-usockets the default.
 
 ## What a run measures
 

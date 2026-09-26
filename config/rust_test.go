@@ -91,3 +91,20 @@ func TestCTablesMatch(t *testing.T) {
 		}
 	}
 }
+
+// benchcli-usockets carries every framework, as benchcli-rustls does.
+func TestCClientTableMatches(t *testing.T) {
+	rows := rustRows(t, "../benchcli-usockets/main.cpp",
+		`\{"([a-z0-9-]+)", "([a-z+]+)", "([0-9.]+)", (\d+), (\d+)\},`)
+	if len(rows) != len(Variants) {
+		t.Fatalf("benchcli-usockets lists %d frameworks, Variants %d", len(rows), len(Variants))
+	}
+	for i, row := range rows {
+		v := Variants[i]
+		ports, _ := GetFrameworkBenchmarkPorts(v.Name)
+		want := []string{v.Name, Langs[v.Name], v.Version, strconv.Itoa(ports[0]), strconv.Itoa(ports[len(ports)-1])}
+		if !equalRows(row, want) {
+			t.Errorf("benchcli-usockets row %d is %v, want %v", i, row, want)
+		}
+	}
+}

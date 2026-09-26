@@ -1,26 +1,27 @@
 #!/bin/bash
 
-# Benchmark client: benchcli-rustls (default), on rustls and tokio, or
-# benchcli-go, on crypto/tls. Both run the same three benchmarks with the same
-# flags and write the same JSON report files; the report step turns them into
-# tables with the Go client either way.
+# Benchmark client: benchcli-usockets (default), on uSockets and BoringSSL,
+# benchcli-rustls, on rustls and tokio, or benchcli-go, on crypto/tls. All
+# three run the same three benchmarks with the same flags and write the same
+# JSON report files; the report step turns them into tables with the Go client
+# whichever measured.
 #
-# benchcli-rustls is the default because it is the one that holds a server
-# back least: on the same CPUs it completes up to 1.8 times the full
-# handshakes benchcli-go does and up to 1.5 times the echo round trips, where
-# benchcli-go is the bottleneck, while benchcli-go leads only in
-# BenchPipeline, where both reach what the servers answer unless the client
-# is starved of CPUs. See "Clients" in the README for the measurements.
+# benchcli-usockets is the default because it is the one that holds a server
+# back least: given fewer CPUs than the server, so that the client is the
+# bottleneck, it reaches on average 94% of the best of the three across every
+# framework and phase, against 88% for benchcli-rustls and 75% for
+# benchcli-go, and with the runner's own split it is within 1% of the best on
+# more rows than either. See "Clients" in the README for the measurements.
 #
 # rustls does not implement TLS 1.1, so under benchcli-rustls the *-tls11
-# frameworks are measured by benchcli-go (script/client.sh), and the Summary's
-# Client row names which client measured which rows. benchcli-rustls needs
-# cargo - which the rustls server needs anyway.
+# frameworks are measured by benchcli-go (script/client.sh); the other two
+# measure every framework. benchcli-usockets needs git, cmake and a C/C++
+# compiler, as the usockets server does; benchcli-rustls needs cargo.
 # Override for one run with: BENCH_CLIENT=benchcli-go bash script/benchmark.sh
-BENCH_CLIENT=${BENCH_CLIENT:-benchcli-rustls}
+BENCH_CLIENT=${BENCH_CLIENT:-benchcli-usockets}
 case "$BENCH_CLIENT" in
-    benchcli-go|benchcli-rustls) ;;
-    *) echo "Unsupported BENCH_CLIENT: $BENCH_CLIENT (want benchcli-go or benchcli-rustls)" >&2; return 1 ;;
+    benchcli-go|benchcli-rustls|benchcli-usockets) ;;
+    *) echo "Unsupported BENCH_CLIENT: $BENCH_CLIENT (want benchcli-go, benchcli-rustls or benchcli-usockets)" >&2; return 1 ;;
 esac
 
 # Where the servers are, as the clients should reach them: an address or a

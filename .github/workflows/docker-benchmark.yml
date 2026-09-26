@@ -29,10 +29,10 @@ on:
         type: string
         default: ""
       client:
-        description: "Benchmark client (benchcli-rustls holds the servers back least; see the README)"
+        description: "Benchmark client (benchcli-usockets holds the servers back least; see the README)"
         type: choice
-        options: [benchcli-rustls, benchcli-go]
-        default: benchcli-rustls
+        options: [benchcli-usockets, benchcli-rustls, benchcli-go]
+        default: benchcli-usockets
       tls_versions:
         description: "BENCH_TLS_VERSIONS, comma-separated, e.g. 1.2,1.3 (empty = every version; under benchcli-rustls, 1.1 is measured by benchcli-go)"
         type: string
@@ -117,7 +117,7 @@ jobs:
           # an input cannot become shell of its own.
           INPUT_MODE: ${{ env.BENCH_MODE }}
           INPUT_FRAMEWORKS: ${{ inputs.frameworks }}
-          INPUT_CLIENT: ${{ inputs.client || 'benchcli-rustls' }}
+          INPUT_CLIENT: ${{ inputs.client || 'benchcli-usockets' }}
           INPUT_TLS_VERSIONS: ${{ inputs.tls_versions }}
           INPUT_KEY: ${{ inputs.key || 'ecdsa' }}
           INPUT_CPUS: ${{ env.BENCH_RUN_CPUS }}

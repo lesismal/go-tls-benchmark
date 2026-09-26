@@ -18,7 +18,7 @@ Options:
   -h, --help    Show this help.
 
 Environment overrides:
-  BENCH_CLIENT             benchcli-rustls (default) or benchcli-go
+  BENCH_CLIENT             benchcli-usockets (default), benchcli-rustls or benchcli-go
   BENCH_FRAMEWORKS         Comma-separated frameworks, e.g. fib-tls13, or
                            servers, e.g. fib for every TLS version of it
   BENCH_TLS_VERSIONS       Comma-separated TLS versions, e.g. 1.2,1.3

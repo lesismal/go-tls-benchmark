@@ -51,8 +51,9 @@ func tableColumn(field reflect.StructField, enableTPN bool) bool {
 // clientNames is how the Summary shows each client: its language, then the
 // framework it runs on, "<lang>-<framework>".
 var clientNames = map[string]string{
-	"benchcli-go":     "go-crypto/tls",
-	"benchcli-rustls": "rust-rustls",
+	"benchcli-go":       "go-crypto/tls",
+	"benchcli-rustls":   "rust-rustls",
+	"benchcli-usockets": "c-usockets",
 }
 
 // clientName is how the Summary shows the client that measured a row:

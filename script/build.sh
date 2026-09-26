@@ -46,6 +46,7 @@ build_benchmark() {
         case "$BENCH_CLIENT" in
             benchcli-go) cp ./output/bin/bench.report ./output/bin/bench.client || return 1 ;;
             benchcli-rustls) bash ./benchcli-rustls/build.sh "$(pwd)/output/bin/bench.client" || return 1 ;;
+            benchcli-usockets) bash ./benchcli-usockets/build.sh "$(pwd)/output/bin/bench.client" || return 1 ;;
         esac
         echo "build client done"
     else

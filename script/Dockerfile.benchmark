@@ -74,13 +74,16 @@ RUN if [ -n "$CARGO_MIRROR" ]; then \
     && cargo build --release --locked --manifest-path frameworks/rustls/Cargo.toml \
     && cargo build --release --locked --manifest-path benchcli-rustls/Cargo.toml
 
-# The uSockets server's sources - uSockets and BoringSSL, cloned at the
-# releases frameworks/usockets/build.sh pins, BoringSSL built - into a
+# The uSockets server's and benchcli-usockets' sources - uSockets and
+# BoringSSL, cloned at the releases frameworks/usockets/deps.sh pins, BoringSSL
+# built - into a
 # directory outside the workspace that the script reuses, so that
 # script/build.sh builds the server in the container with no network.
 ENV USOCKETS_DEPS_DIR=/tmp/usockets-deps
 COPY frameworks/usockets /workspace/frameworks/usockets
-RUN bash frameworks/usockets/build.sh /tmp/usockets.server && rm /tmp/usockets.server
+COPY benchcli-usockets /workspace/benchcli-usockets
+RUN bash frameworks/usockets/build.sh /tmp/usockets.server && rm /tmp/usockets.server \
+    && bash benchcli-usockets/build.sh /tmp/bench.client && rm /tmp/bench.client
 
 COPY . .
 
