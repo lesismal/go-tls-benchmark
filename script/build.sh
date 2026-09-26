@@ -23,6 +23,7 @@ build_benchmark() {
                 echo "build ${base} ..."
                 case "$base" in
                     rustls) bash ./frameworks/rustls/build.sh "$(pwd)/output/bin/base/${base}" || return 1 ;;
+                    usockets) bash ./frameworks/usockets/build.sh "$(pwd)/output/bin/base/${base}" || return 1 ;;
                     *) go build -o "./output/bin/base/${base}" "./frameworks/${base}" || return 1 ;;
                 esac
                 echo "build ${base} done"

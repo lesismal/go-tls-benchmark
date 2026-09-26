@@ -115,6 +115,9 @@ SleepTime=5
 #           and 1.3 only: rustls does not implement 1.1
 #   stdtls  the standard library: crypto/tls over net, a goroutine per
 #           connection
+#   usockets  uSockets (under uWebSockets and Bun) with BoringSSL, in C: an
+#           event loop per CPU; building it needs git, cmake and a C/C++
+#           compiler (see frameworks/usockets/build.sh)
 frameworks=(
     "fib-tls11"
     "fib-tls12"
@@ -124,6 +127,9 @@ frameworks=(
     "stdtls-tls11"
     "stdtls-tls12"
     "stdtls-tls13"
+    "usockets-tls11"
+    "usockets-tls12"
+    "usockets-tls13"
 )
 
 # The server a framework is a variant of, whose binary it runs: "fib" for

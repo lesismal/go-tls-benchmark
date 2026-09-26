@@ -35,14 +35,19 @@ const (
 	// StdTLS is the standard library: crypto/tls over net, a goroutine per
 	// connection.
 	StdTLS = "stdtls"
+	// USockets is uSockets - the event loops and TLS under uWebSockets and
+	// Bun - with BoringSSL, in C: an event loop per CPU, each listening on
+	// every port with SO_REUSEPORT.
+	USockets = "usockets"
 )
 
 // BaseLangs is the programming language each base's server is written in, as
 // the reports' Lang column shows it.
 var BaseLangs = map[string]string{
-	Fib:    "go",
-	RustLS: "rust",
-	StdTLS: "go",
+	Fib:      "go",
+	RustLS:   "rust",
+	StdTLS:   "go",
+	USockets: "c",
 }
 
 // Variant is one framework as a run measures it: a base server pinned to one
@@ -59,7 +64,8 @@ type Variant struct {
 // order of FrameworkList, of the frameworks list in script/config.sh, and of
 // the rows of a -sort=framework report.
 //
-// The Go servers speak TLS 1.1 to 1.3; rustls implements only 1.2 and 1.3.
+// The Go servers and usockets speak TLS 1.1 to 1.3; rustls implements only
+// 1.2 and 1.3.
 // TLS 1.0 is left out: crypto/tls still speaks it, but it and 1.1 were
 // deprecated together (RFC 8996) and negotiate the same cipher suites, so a
 // 1.0 variant would measure nothing 1.1 does not.
@@ -73,8 +79,9 @@ type Variant struct {
 // of them fit in one small range, which a run reserves out of the client's
 // ephemeral ports (server_port_range in script/config.sh).
 //
-// frameworks/rustls and benchcli-rustls cannot import this table, so each
-// carries its own copy of it, which TestRustTablesMatch holds to this one.
+// frameworks/rustls, frameworks/usockets and benchcli-rustls cannot import
+// this table, so each carries its own copy of it, which TestRustTablesMatch
+// and TestCTablesMatch hold to this one.
 var Variants = []Variant{
 	{"fib-tls11", Fib, TLS11, "12001:12050"},
 	{"fib-tls12", Fib, TLS12, "12101:12150"},
@@ -84,6 +91,9 @@ var Variants = []Variant{
 	{"stdtls-tls11", StdTLS, TLS11, "12501:12550"},
 	{"stdtls-tls12", StdTLS, TLS12, "12601:12650"},
 	{"stdtls-tls13", StdTLS, TLS13, "12701:12750"},
+	{"usockets-tls11", USockets, TLS11, "12801:12850"},
+	{"usockets-tls12", USockets, TLS12, "12901:12950"},
+	{"usockets-tls13", USockets, TLS13, "13001:13050"},
 }
 
 // VariantName is the name of base's variant pinned to version, e.g.

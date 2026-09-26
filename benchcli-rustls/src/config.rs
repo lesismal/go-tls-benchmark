@@ -15,6 +15,9 @@ pub const FRAMEWORKS: &[(&str, &str, &str, u16, u16)] = &[
     ("stdtls-tls11", "go", "1.1", 12501, 12550),
     ("stdtls-tls12", "go", "1.2", 12601, 12650),
     ("stdtls-tls13", "go", "1.3", 12701, 12750),
+    ("usockets-tls11", "c", "1.1", 12801, 12850),
+    ("usockets-tls12", "c", "1.2", 12901, 12950),
+    ("usockets-tls13", "c", "1.3", 13001, 13050),
 ];
 
 /// config.ServerName: the SNI every client sends, whatever address it dials.

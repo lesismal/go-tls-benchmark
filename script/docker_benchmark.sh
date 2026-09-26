@@ -13,7 +13,7 @@ Usage:
   bash script/docker_benchmark.sh [options] [benchmark client flags]
 
 Options:
-  --smoke       Run a short validation of rustls and stdtls, at every TLS version.
+  --smoke       Run a short validation of rustls, stdtls and usockets, at every TLS version.
   --rebuild     Rebuild the image without Docker's layer cache.
   -h, --help    Show this help.
 
@@ -177,7 +177,7 @@ fi
 
 run_frameworks=${BENCH_FRAMEWORKS:-}
 if [ "$smoke" = true ]; then
-    run_frameworks=rustls,stdtls
+    run_frameworks=rustls,stdtls,usockets
     smoke_args=(-c=100 -dc=20 -ec=50 -en=2000 -b=512 -rate=true -rc=10 -rd=1 -rr=20)
     if [ "${#benchmark_args[@]}" -gt 0 ]; then
         benchmark_args=("${smoke_args[@]}" "${benchmark_args[@]}")

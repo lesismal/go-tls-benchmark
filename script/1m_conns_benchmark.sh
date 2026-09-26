@@ -23,6 +23,7 @@ if [ -z "${BENCH_FRAMEWORKS:-}" ]; then
         "fib-tls13"
         "rustls-tls13"
         "stdtls-tls13"
+        "usockets-tls13"
     )
 fi
 

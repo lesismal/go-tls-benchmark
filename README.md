@@ -11,6 +11,7 @@ between them is how they run TLS, not a protocol on top of it.
 | `fib` | go | [github.com/lesismal/fib](https://github.com/lesismal/fib): its event loop does the I/O, and [`fib/tls`](https://github.com/lesismal/fib/tree/main/tls) runs crypto/tls in front of an echo handler |
 | `rustls` | rust | [rustls](https://github.com/rustls/rustls) on tokio, through tokio-rustls, with aws-lc-rs as its cryptography: a task per connection on tokio's multi-threaded runtime |
 | `stdtls` | go | the standard library: `crypto/tls` over `net`, a goroutine per connection |
+| `usockets` | c | [uSockets](https://github.com/uNetworking/uSockets) - the event loops and TLS under [uWebSockets](https://github.com/uNetworking/uWebSockets) and Bun - with [BoringSSL](https://boringssl.googlesource.com/boringssl): an event loop per CPU, each listening on every port with `SO_REUSEPORT`, echoing from the loop's read callback |
 
 ## Frameworks: a server per TLS version
 
@@ -28,9 +29,12 @@ only that version, so the row measures the version it says it does.
 | `stdtls-tls11` | 1.1 | 12501-12550 | 12551 |
 | `stdtls-tls12` | 1.2 | 12601-12650 | 12651 |
 | `stdtls-tls13` | 1.3 | 12701-12750 | 12751 |
+| `usockets-tls11` | 1.1 | 12801-12850 | 12851 |
+| `usockets-tls12` | 1.2 | 12901-12950 | 12951 |
+| `usockets-tls13` | 1.3 | 13001-13050 | 13051 |
 
 rustls implements TLS 1.2 and 1.3 only, so it has no `-tls11`; crypto/tls
-still speaks 1.0 as well, which is left out as measuring nothing 1.1 does not
+and BoringSSL still speak 1.0 as well, which is left out as measuring nothing 1.1 does not
 (the two were deprecated together, RFC 8996, and negotiate the same CBC cipher
 suites). The list is `config.Variants` in [config/config.go](config/config.go);
 a variant is one more row there, with the next free block of ports.
@@ -53,14 +57,21 @@ BENCH_TLS_VERSIONS=1.3 bash script/benchmark.sh
 ```
 
 Every server issues itself a certificate at startup and uses its TLS
-library's defaults for the rest, set to match: rustls orders AES-128-GCM
-first, as crypto/tls does on a machine with AES instructions, so every pair
-of client and server negotiates the same cipher suite; and it issues one
-stateless session ticket after a TLS 1.3 handshake, as crypto/tls does, rather
-than its own default of two tickets backed by a session cache. The key
-exchange is each library's default, which is the same one: the post-quantum
-hybrid `X25519MLKEM768` for TLS 1.3, whose key exchange costs more than plain
-`X25519`, and `X25519` for 1.2 and 1.1.
+library's defaults for the rest, set to match crypto/tls's, so that every pair
+of client and server negotiates the same handshake:
+
+- the key exchange: the post-quantum hybrid `X25519MLKEM768` first for TLS
+  1.3, whose key exchange costs more than plain `X25519`, and `X25519` for 1.2
+  and 1.1. crypto/tls and rustls (on aws-lc-rs) offer it by default; the
+  usockets server sets BoringSSL's groups to the same list. BoringSSL, rather
+  than the system's OpenSSL, is also why usockets can: Debian's OpenSSL 3.0
+  has no `X25519MLKEM768`.
+- the cipher suite: every server takes the client's order, and every client
+  offers AES-128-GCM first - rustls is told to, where its own default is
+  AES-256-GCM - or, at TLS 1.1, AES-128-CBC-SHA.
+- session tickets: one stateless ticket after a TLS 1.3 handshake and no
+  server-side session cache, as crypto/tls has it, where rustls's default is
+  two tickets backed by a cache and BoringSSL's two tickets.
 
 ## Clients
 
@@ -196,12 +207,12 @@ The Docker runner reads the CPU set and memory exposed by the Docker daemon,
 uses about 75% of its CPUs and 80% of its memory, pins separate CPU groups for
 the servers and client, runs with `--network none`, and copies reports, logs,
 console output and the resource plan to `output/docker/<timestamp>`. The image
-has both toolchains, Go and Rust, and fetches and compiles the Rust crates
-when it is built, so both clients and every server build in the container
-with no network.
+has every toolchain - Go, Rust, and cmake and g++ for C and C++ - and fetches
+and compiles the Rust crates, uSockets and BoringSSL when it is built, so both
+clients and every server build in the container with no network.
 
 ```sh
-# Short validation of rustls and stdtls, every TLS version
+# Short validation of rustls, stdtls and usockets, every TLS version
 bash script/docker_benchmark.sh --smoke
 
 # Full benchmark, with either client
@@ -264,7 +275,7 @@ sysctl -w net.ipv4.ip_local_port_range="1024 65535"
 # Keep the servers' ports (config.Ports) out of that range: each server starts
 # just before its turn, and would fail to bind a port the client before it left
 # in TIME_WAIT. The run prints the exact list when they are not reserved.
-sysctl -w net.ipv4.ip_local_reserved_ports=12001-12751
+sysctl -w net.ipv4.ip_local_reserved_ports=12001-13051
 sysctl -w fs.file-max=2000500
 sysctl -w fs.nr_open=2000500
 sysctl -w net.nf_conntrack_max=2000500

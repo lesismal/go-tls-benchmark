@@ -20,12 +20,12 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "smoke: short rustls and stdtls run, every TLS version. full: every framework in script/config.sh"
+        description: "smoke: short rustls, stdtls and usockets run, every TLS version. full: every framework in script/config.sh"
         type: choice
         options: [smoke, full]
         default: smoke
       frameworks:
-        description: "Comma-separated frameworks, e.g. fib-tls13,rustls-tls13, or servers, e.g. fib for every TLS version of it (empty = all; ignored by smoke, which forces rustls,stdtls)"
+        description: "Comma-separated frameworks, e.g. fib-tls13,rustls-tls13, or servers, e.g. fib for every TLS version of it (empty = all; ignored by smoke, which forces rustls,stdtls,usockets)"
         type: string
         default: ""
       client:

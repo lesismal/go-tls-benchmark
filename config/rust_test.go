@@ -70,3 +70,24 @@ func equalRows(a, b []string) bool {
 	}
 	return true
 }
+
+// The uSockets server carries its own variants, as the rustls one does.
+func TestCTablesMatch(t *testing.T) {
+	got := rustRows(t, "../frameworks/usockets/server.c",
+		`\{"([a-z0-9-]+)", "([0-9.]+)", (\d+), (\d+)\},`)
+	var want [][]string
+	for _, v := range Variants {
+		if v.Base == USockets {
+			ports, _ := GetFrameworkBenchmarkPorts(v.Name)
+			want = append(want, []string{v.Name, v.Version, strconv.Itoa(ports[0]), strconv.Itoa(ports[len(ports)-1])})
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("the usockets server lists %d variants, Variants %d", len(got), len(want))
+	}
+	for i := range want {
+		if !equalRows(got[i], want[i]) {
+			t.Errorf("usockets server row %d is %v, want %v", i, got[i], want[i])
+		}
+	}
+}

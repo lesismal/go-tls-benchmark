@@ -29,7 +29,8 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 
 # procps, psmisc and util-linux for pkill/killall and taskset, which the
 # scripts stop the servers and pin them to their CPUs with. cmake for
-# aws-lc-sys, the cryptography under rustls, where its build wants it.
+# aws-lc-sys, the cryptography under rustls, where its build wants it, and for
+# BoringSSL, under the uSockets server, with g++ for both.
 RUN if [ -n "$APT_MIRROR" ]; then \
         for f in /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list; do \
             if [ -f "$f" ]; then \
@@ -41,6 +42,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         ca-certificates \
         cmake \
+        g++ \
         procps \
         psmisc \
         util-linux \
@@ -71,6 +73,14 @@ RUN if [ -n "$CARGO_MIRROR" ]; then \
     fi \
     && cargo build --release --locked --manifest-path frameworks/rustls/Cargo.toml \
     && cargo build --release --locked --manifest-path benchcli-rustls/Cargo.toml
+
+# The uSockets server's sources - uSockets and BoringSSL, cloned at the
+# releases frameworks/usockets/build.sh pins, BoringSSL built - into a
+# directory outside the workspace that the script reuses, so that
+# script/build.sh builds the server in the container with no network.
+ENV USOCKETS_DEPS_DIR=/tmp/usockets-deps
+COPY frameworks/usockets /workspace/frameworks/usockets
+RUN bash frameworks/usockets/build.sh /tmp/usockets.server && rm /tmp/usockets.server
 
 COPY . .
 
