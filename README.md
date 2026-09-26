@@ -68,24 +68,49 @@ hybrid `X25519MLKEM768` for TLS 1.3, whose key exchange costs more than plain
 
 | `BENCH_CLIENT` | Client | Summary's `Client` |
 | --- | --- | --- |
-| `benchcli-go` (default) | Go, crypto/tls, a goroutine per connection | `go-crypto/tls` |
-| `benchcli-rustls` | Rust, rustls on tokio (tokio-rustls, aws-lc-rs); needs cargo 1.85+ | `rust-rustls` |
+| `benchcli-rustls` (default) | Rust, rustls on tokio (tokio-rustls, aws-lc-rs); needs cargo 1.85+, which the rustls server needs too | `rust-rustls` |
+| `benchcli-go` | Go, crypto/tls, a goroutine per connection | `go-crypto/tls` |
 
 ```sh
-BENCH_CLIENT=benchcli-rustls bash script/benchmark.sh
+BENCH_CLIENT=benchcli-go bash script/benchmark.sh
 ```
 
 Both take the same flags, run the same three phases the same way and write
 the same JSON report files, which the report step - the Go client either way -
-turns into the tables. `benchcli-rustls` cannot speak TLS 1.1, and skips the
-`*-tls11` frameworks with a line in its log and no report, so its tables have
-no TLS 1.1 section.
+turns into the tables. rustls does not implement TLS 1.1, so under
+`benchcli-rustls` the `*-tls11` frameworks are measured by `benchcli-go`
+(`script/client.sh` picks it), and the Summary's `Client` row says which
+client measured which rows.
 
 Neither client keeps a session cache, so every handshake is a full one, and
 neither verifies the server's certificate chain - the benchmark measures the
 servers' side of the handshake, and a client checking a chain on the machine
 it shares with the server would only take CPU from it - while both still
 verify the handshake's signature with the certificate's key.
+
+### Why benchcli-rustls is the default
+
+A client is only as good as how little it holds the server back. Both were
+run against every TLS 1.2 and 1.3 framework, with the defaults (10,000
+connections, 1KB messages), in the Docker runner on an Apple M4 Pro; the
+ratio is benchcli-rustls's TPS over benchcli-go's:
+
+| Phase | Server 3 CPUs, client 4 (the runner's split) | Server 4 CPUs, client 2 (client-bound) |
+| --- | --- | --- |
+| Connections | 0.99 - 1.78 | 1.40 - 1.80 |
+| BenchEcho | 0.91 - 1.20 | 1.24 - 1.54 |
+| BenchPipeline | 0.95 - 1.02 | 0.62 - 0.79 |
+
+With the client given fewer CPUs than the server, so that it is the
+bottleneck, benchcli-rustls completes up to 1.8 times the handshakes and 1.5
+times the round trips; with the runner's own split, benchcli-go is the
+bottleneck on handshakes against rustls, which read 44% lower through it
+(13,522 against 24,070 a second at TLS 1.3). benchcli-go generates more of
+BenchPipeline's traffic on a starved client - a tokio task per writer and per
+connection costs more there than a goroutine does - but with the runner's
+split both reach what the servers answer, within 5% at fib's 2,000,000 cap.
+The cryptography is not the difference: aws-lc-rs's AES-128-GCM seals within
+10% of crypto/tls's on the same machine.
 
 ## What a run measures
 

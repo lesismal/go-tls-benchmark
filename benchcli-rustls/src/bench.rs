@@ -528,29 +528,45 @@ pub async fn pipeline<F: std::future::Future<Output = ()>>(
             }
         }
         let addr = c.addr.clone();
-        let (mut rh, wh) = tokio::io::split(c.stream);
+        let (tcp, tls) = c.stream.into_inner();
+        let pc = Arc::new(PipeConn {
+            tcp,
+            tls: std::sync::Mutex::new(tls),
+        });
         let inflight = Arc::new((AtomicI64::new(0), AtomicI64::new(0)));
-        let (counters, msg, check, flight) = (
+        let (counters, msg, check, flight, reader) = (
             Arc::clone(&counters),
             Arc::clone(&msg),
             cfg.check,
             Arc::clone(&inflight),
+            Arc::clone(&pc),
         );
         readers.push(tokio::spawn(async move {
-            let mut buf = vec![0u8; 16 << 10];
             // How far into the message at the front of the stream the bytes
             // read so far have got.
             let mut offset = 0usize;
             loop {
-                let n = match rh.read(&mut buf).await {
-                    Ok(0) | Err(_) => return,
-                    Ok(n) => n,
-                };
-                if check && !matches_repeated(&buf[..n], &msg, offset) {
-                    logf!("BenchPipeline: {addr} echoed bytes that were not sent, leaving the connection out");
+                if reader.tcp.readable().await.is_err() {
                     return;
                 }
-                offset += n;
+                let got = match reader.read_plaintext(|plain| {
+                    if check && !matches_repeated(plain, &msg, offset) {
+                        return false;
+                    }
+                    offset += plain.len();
+                    true
+                }) {
+                    Ok(Some(true)) => true,
+                    Ok(Some(false)) => {
+                        logf!("BenchPipeline: {addr} echoed bytes that were not sent, leaving the connection out");
+                        return;
+                    }
+                    Ok(None) => false,
+                    Err(_) => return,
+                };
+                if !got {
+                    continue;
+                }
                 let msgs = offset / payload;
                 if msgs > 0 {
                     offset -= msgs * payload;
@@ -562,7 +578,7 @@ pub async fn pipeline<F: std::future::Future<Output = ()>>(
                 }
             }
         }));
-        writers.push((wh, inflight));
+        writers.push((pc, inflight));
     }
 
     let mut teams: Vec<Vec<_>> = (0..concurrency).map(|_| Vec::new()).collect();
@@ -590,6 +606,8 @@ pub async fn pipeline<F: std::future::Future<Output = ()>>(
             limiter.clone(),
         );
         tasks.push(tokio::spawn(async move {
+            // The records a batch is sealed into, reused for every write.
+            let mut sealed = Vec::with_capacity(batch_buffer.len() + 1024);
             let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             for _ in 0..ticks {
@@ -597,7 +615,7 @@ pub async fn pipeline<F: std::future::Future<Output = ()>>(
                     _ = tokio::time::sleep_until(deadline) => return team,
                     _ = ticker.tick() => {}
                 }
-                for (wh, flight) in team.iter_mut() {
+                for (pc, flight) in team.iter_mut() {
                     if flight.0.load(Ordering::Relaxed) - flight.1.load(Ordering::Relaxed)
                         >= batch as i64 * MAX_BATCHES_IN_FLIGHT
                     {
@@ -606,7 +624,7 @@ pub async fn pipeline<F: std::future::Future<Output = ()>>(
                     if let Some(l) = &limiter {
                         l.wait(batch).await;
                     }
-                    if wh.write_all(&batch_buffer).await.is_ok() && wh.flush().await.is_ok() {
+                    if pc.write(&batch_buffer, &mut sealed).await.is_ok() {
                         counters
                             .send_times
                             .fetch_add(batch as i64, Ordering::Relaxed);
@@ -620,10 +638,8 @@ pub async fn pipeline<F: std::future::Future<Output = ()>>(
             team
         }));
     }
-    // The write halves are kept, not dropped, until the last batch has had
-    // its tick to come back: dropping one does not close the connection, but
-    // there is no reason to find out what a server does with a half it has
-    // read the batch and a close_notify behind.
+    // The connections are kept, not dropped, until the last batch has had its
+    // tick to come back: dropping them would close them.
     let mut write_halves = Vec::with_capacity(tasks.len());
     for t in tasks {
         if let Ok(team) = t.await {
@@ -655,4 +671,87 @@ pub async fn pipeline<F: std::future::Future<Output = ()>>(
         cfg.duration.as_secs_f64()
     );
     result
+}
+
+/// A connection as BenchPipeline drives it: rustls's connection state beside
+/// the socket rather than wrapped around it, as tokio-rustls has it.
+///
+/// tokio-rustls reads the socket through rustls's read_tls, 4KiB a call, and
+/// shrinks rustls's buffer back each time it empties, so a batch sealed into
+/// one 16KiB record takes four reads and a reallocation to come back - what a
+/// crypto/tls client does in one. Here each reader waits for the socket to be
+/// readable without holding a buffer, reads all that has arrived into one per
+/// thread, and hands that to rustls, which is the way rustls's own examples
+/// drive a connection for throughput. Nothing is kept per connection but what
+/// rustls keeps, so the phase costs a client no more memory at a million
+/// connections than tokio-rustls does.
+struct PipeConn {
+    tcp: TcpStream,
+    tls: std::sync::Mutex<rustls::ClientConnection>,
+}
+
+thread_local! {
+    /// What one read takes off a socket: 64KiB, four full records.
+    static CIPHERTEXT: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(vec![0; 64 << 10]);
+    /// What rustls decrypts them into.
+    static PLAINTEXT: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(vec![0; 16 << 10]);
+}
+
+impl PipeConn {
+    /// Reads what the socket has, decrypts it, and hands the plaintext to f,
+    /// piece by piece, until f says no. None when the readiness was spurious
+    /// and there was nothing to read; Some(false) when f refused a piece.
+    fn read_plaintext(&self, mut f: impl FnMut(&[u8]) -> bool) -> io::Result<Option<bool>> {
+        CIPHERTEXT.with_borrow_mut(|cipher| {
+            let n = match self.tcp.try_read(cipher) {
+                Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
+                Ok(n) => n,
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => return Ok(None),
+                Err(err) => return Err(err),
+            };
+            let mut tls = self.tls.lock().unwrap();
+            let mut rest = &cipher[..n];
+            PLAINTEXT.with_borrow_mut(|plain| {
+                while !rest.is_empty() {
+                    tls.read_tls(&mut rest)?;
+                    tls.process_new_packets().map_err(io::Error::other)?;
+                    loop {
+                        match io::Read::read(&mut tls.reader(), plain) {
+                            Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
+                            Ok(m) => {
+                                if !f(&plain[..m]) {
+                                    return Ok(Some(false));
+                                }
+                            }
+                            Err(err) if err.kind() == io::ErrorKind::WouldBlock => break,
+                            Err(err) => return Err(err),
+                        }
+                    }
+                }
+                Ok(Some(true))
+            })
+        })
+    }
+
+    /// Seals data into records, into sealed, and writes them to the socket.
+    async fn write(&self, data: &[u8], sealed: &mut Vec<u8>) -> io::Result<()> {
+        sealed.clear();
+        {
+            let mut tls = self.tls.lock().unwrap();
+            io::Write::write_all(&mut tls.writer(), data)?;
+            while tls.wants_write() {
+                tls.write_tls(sealed)?;
+            }
+        }
+        let mut at = 0;
+        while at < sealed.len() {
+            self.tcp.writable().await?;
+            match self.tcp.try_write(&sealed[at..]) {
+                Ok(n) => at += n,
+                Err(err) if err.kind() == io::ErrorKind::WouldBlock => {}
+                Err(err) => return Err(err),
+            }
+        }
+        Ok(())
+    }
 }

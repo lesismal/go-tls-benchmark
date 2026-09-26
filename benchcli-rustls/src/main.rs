@@ -9,7 +9,8 @@
 //! report format and one implementation of it.
 //!
 //! rustls implements TLS 1.2 and 1.3 only, so a framework pinned to TLS 1.1
-//! is skipped, with a line in the log and no report.
+//! is skipped, with a line in the log and no report; script/client.sh hands
+//! those to benchcli-go instead.
 
 mod bench;
 mod config;
@@ -75,7 +76,7 @@ fn main() {
     let version = config::version(&f.framework);
     if version == "1.1" {
         logf!(
-            "{}: skipped: rustls does not implement TLS 1.1; benchmark it with BENCH_CLIENT=benchcli-go",
+            "{}: skipped: rustls does not implement TLS 1.1; script/client.sh runs benchcli-go for it",
             f.framework
         );
         return;

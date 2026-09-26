@@ -3,7 +3,7 @@ module go-tls-benchmark
 go 1.27
 
 require (
-	github.com/lesismal/fib v0.0.0-20260926064024-9dec8fc9752b
+	github.com/lesismal/fib v0.0.0-20260926130615-f70a50674ea0
 	github.com/lesismal/perf v0.0.0-20240508164715-fdb92a70ac1c
 	github.com/libp2p/go-reuseport v0.4.0
 	github.com/shirou/gopsutil v3.21.11+incompatible

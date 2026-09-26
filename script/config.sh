@@ -1,12 +1,23 @@
 #!/bin/bash
 
-# Benchmark client: benchcli-go (default), on crypto/tls, or benchcli-rustls,
-# on rustls and tokio. Both run the same three benchmarks with the same flags
-# and write the same JSON report files; the report step turns them into tables
-# with the Go client either way. benchcli-rustls needs cargo, and cannot speak
-# TLS 1.1, which rustls does not implement: it skips the *-tls11 frameworks.
-# Override for one run with: BENCH_CLIENT=benchcli-rustls bash script/benchmark.sh
-BENCH_CLIENT=${BENCH_CLIENT:-benchcli-go}
+# Benchmark client: benchcli-rustls (default), on rustls and tokio, or
+# benchcli-go, on crypto/tls. Both run the same three benchmarks with the same
+# flags and write the same JSON report files; the report step turns them into
+# tables with the Go client either way.
+#
+# benchcli-rustls is the default because it is the one that holds a server
+# back least: on the same CPUs it completes up to 1.8 times the full
+# handshakes benchcli-go does and up to 1.5 times the echo round trips, where
+# benchcli-go is the bottleneck, while benchcli-go leads only in
+# BenchPipeline, where both reach what the servers answer unless the client
+# is starved of CPUs. See "Clients" in the README for the measurements.
+#
+# rustls does not implement TLS 1.1, so under benchcli-rustls the *-tls11
+# frameworks are measured by benchcli-go (script/client.sh), and the Summary's
+# Client row names which client measured which rows. benchcli-rustls needs
+# cargo - which the rustls server needs anyway.
+# Override for one run with: BENCH_CLIENT=benchcli-go bash script/benchmark.sh
+BENCH_CLIENT=${BENCH_CLIENT:-benchcli-rustls}
 case "$BENCH_CLIENT" in
     benchcli-go|benchcli-rustls) ;;
     *) echo "Unsupported BENCH_CLIENT: $BENCH_CLIENT (want benchcli-go or benchcli-rustls)" >&2; return 1 ;;
