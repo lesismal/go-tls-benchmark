@@ -235,7 +235,12 @@ BENCH_CLIENT=benchcli-rustls bash script/docker_benchmark.sh
 BENCH_FRAMEWORKS=fib,rustls BENCH_TLS_VERSIONS=1.3 \
 DOCKER_BENCH_CPUS=8 DOCKER_BENCH_MEMORY=12g \
 bash script/docker_benchmark.sh -c=10000 -en=2000000 -b=1024 -key=rsa
+
+# 8 CPUs for the container: 2 pinned to the servers, 6 to the client
+bash script/docker_benchmark.sh -cput=8 -cpus=2 -cpuc=6
 ```
+
+`-cput`, `-cpus` and `-cpuc` work the same with `script/docker_benchmark_cn.sh`.
 
 From mainland China, `script/docker_benchmark_cn.sh` takes the same options and
 builds the image from mirrors (DaoCloud for Docker Hub, Aliyun for apt,
